@@ -2,32 +2,205 @@ import copy
 import sys
 from pathlib import Path
 
-PROJECT_FOLDER = Path(
-    r"C:\Users\daryl\Desktop\Robotic D Environment Mapping\Robotic-3D-Environment-Mapping\1. Final Product\Python Code\2. robodk_scan_alignment"
+# ============================================================
+# PROJECT PATH FIX FOR ROBODK / TEMP EXECUTION
+# ============================================================
+
+REPOSITORY_FOLDER_NAME = "Robotic-3D-Environment-Mapping"
+
+PROJECT_RELATIVE_FOLDER = (
+    Path("1. Final Product")
+    / "Python Code"
+    / "2. robodk_scan_alignment"
 )
 
-CURRENT_FOLDER = Path(__file__).resolve().parent
+REQUIRED_PROJECT_FILES = [
+    "config.py",
+    "point_cloud_processor.py",
+    "plane_detector.py",
+    "scan_aligner.py",
+    "scan_filter.py",
+    "deviation_reporter.py",
+    "visualizer.py",
+    "edge_deviation_plotter.py",
+]
 
-if (PROJECT_FOLDER / "config.py").exists():
-    sys.path.insert(0, str(PROJECT_FOLDER))
-elif (CURRENT_FOLDER / "config.py").exists():
-    sys.path.insert(0, str(CURRENT_FOLDER))
-else:
-    raise FileNotFoundError(
-        "config.py was not found.\n\n"
-        "RoboDK is running this script from Temp, so Python cannot find your other files.\n\n"
-        "Fix this by changing PROJECT_FOLDER at the top of this file to the real folder that contains:\n"
-        "- config.py\n"
-        "- point_cloud_processor.py\n"
-        "- plane_detector.py\n"
-        "- scan_aligner.py\n"
-        "- scan_filter.py\n"
-        "- deviation_reporter.py\n"
-        "- visualizer.py\n"
-        "- edge_deviation_plotter.py\n\n"
-        f"Current PROJECT_FOLDER:\n{PROJECT_FOLDER}\n\n"
-        f"Current script folder:\n{CURRENT_FOLDER}"
+
+def is_correct_project_folder(folder: Path) -> bool:
+    """
+    Checks if this is the actual Python project folder.
+    """
+
+    if not folder.is_dir():
+        return False
+
+    return all(
+        (folder / file_name).exists()
+        for file_name in REQUIRED_PROJECT_FILES
     )
+
+
+def is_repository_folder(folder: Path) -> bool:
+    """
+    Checks if this is the repository/root folder.
+
+    Required structure:
+
+    Robotic-3D-Environment-Mapping
+    |-- Point Cloud Testing Folder
+    |-- CAD Model
+    |-- 1. Final Product
+    """
+
+    if not folder.is_dir():
+        return False
+
+    has_point_cloud_folder = (folder / "Point Cloud Testing Folder").is_dir()
+    has_cad_model_folder = (folder / "CAD Model").is_dir()
+
+    return has_point_cloud_folder and has_cad_model_folder
+
+
+def find_project_folder() -> Path:
+    """
+    Finds the correct project folder even when RoboDK runs this file
+    from AppData/Local/Temp.
+
+    It searches for:
+
+    Robotic-3D-Environment-Mapping
+    |-- Point Cloud Testing Folder
+    |-- CAD Model
+    |-- 1. Final Product
+        |-- Python Code
+            |-- 2. robodk_scan_alignment
+    """
+
+    current_file = Path(__file__).resolve()
+    current_folder = current_file.parent
+
+    # ------------------------------------------------------------
+    # 1. Search upward from the current file location.
+    # This works if the file is already inside the repository.
+    # ------------------------------------------------------------
+    for folder in [current_folder, *current_folder.parents]:
+        if folder.name == REPOSITORY_FOLDER_NAME and is_repository_folder(folder):
+            project_folder = folder / PROJECT_RELATIVE_FOLDER
+
+            if is_correct_project_folder(project_folder):
+                return project_folder.resolve()
+
+    # ------------------------------------------------------------
+    # 2. Allow repository folder rename.
+    # As long as it has Point Cloud Testing Folder and CAD Model,
+    # we can still use it.
+    # ------------------------------------------------------------
+    for folder in [current_folder, *current_folder.parents]:
+        if is_repository_folder(folder):
+            project_folder = folder / PROJECT_RELATIVE_FOLDER
+
+            if is_correct_project_folder(project_folder):
+                return project_folder.resolve()
+
+    # ------------------------------------------------------------
+    # 3. RoboDK usually runs from Temp, so search common locations.
+    # Important:
+    # Search for the repository folder first, not just the project folder.
+    # This avoids accidentally using:
+    # C:/Users/daryl/Desktop/1. Final Product/...
+    # ------------------------------------------------------------
+    home_folder = Path.home()
+
+    search_locations = [
+        home_folder / "Desktop",
+        home_folder / "OneDrive" / "Desktop",
+        home_folder / "Documents",
+        home_folder / "Downloads",
+        home_folder,
+    ]
+
+    for search_location in search_locations:
+        if not search_location.exists():
+            continue
+
+        # Direct check:
+        # Desktop/Robotic-3D-Environment-Mapping
+        direct_repository = search_location / REPOSITORY_FOLDER_NAME
+        direct_project = direct_repository / PROJECT_RELATIVE_FOLDER
+
+        if is_repository_folder(direct_repository) and is_correct_project_folder(direct_project):
+            return direct_project.resolve()
+
+        # Recursive check:
+        # Desktop/.../.../Robotic-3D-Environment-Mapping
+        try:
+            for repository_candidate in search_location.rglob(REPOSITORY_FOLDER_NAME):
+                project_folder = repository_candidate / PROJECT_RELATIVE_FOLDER
+
+                if is_repository_folder(repository_candidate) and is_correct_project_folder(project_folder):
+                    return project_folder.resolve()
+
+        except PermissionError:
+            continue
+
+    raise FileNotFoundError(
+        "Could not find the correct RoboDK scan alignment project folder.\n\n"
+        "Expected repository structure:\n"
+        f"{REPOSITORY_FOLDER_NAME}\\Point Cloud Testing Folder\n"
+        f"{REPOSITORY_FOLDER_NAME}\\CAD Model\n"
+        f"{REPOSITORY_FOLDER_NAME}\\1. Final Product\\Python Code\\2. robodk_scan_alignment\n\n"
+        "Example correct path:\n"
+        "C:\\Users\\daryl\\Desktop\\Robotic D Environment Mapping\\"
+        "Robotic-3D-Environment-Mapping\\1. Final Product\\Python Code\\2. robodk_scan_alignment\n\n"
+        "Problem:\n"
+        "A duplicate project folder may exist here:\n"
+        "C:\\Users\\daryl\\Desktop\\1. Final Product\\Python Code\\2. robodk_scan_alignment\n\n"
+        "Fix:\n"
+        "Use the project inside Robotic-3D-Environment-Mapping, or remove/rename the duplicate folder."
+    )
+
+
+PROJECT_FOLDER = find_project_folder()
+
+# Remove old project paths from sys.path
+cleaned_sys_path = []
+
+for path in sys.path:
+    try:
+        if Path(path).resolve() != PROJECT_FOLDER:
+            cleaned_sys_path.append(path)
+    except Exception:
+        cleaned_sys_path.append(path)
+
+sys.path = cleaned_sys_path
+
+# Force Python to import modules from the correct project folder first
+sys.path.insert(0, str(PROJECT_FOLDER))
+
+# Clear cached imports so RoboDK does not reuse old config.py
+for module_name in [
+    "config",
+    "point_cloud_processor",
+    "plane_detector",
+    "scan_aligner",
+    "scan_filter",
+    "deviation_reporter",
+    "visualizer",
+    "edge_deviation_plotter",
+]:
+    sys.modules.pop(module_name, None)
+
+print("")
+print("=" * 70)
+print("Using project folder:")
+print(PROJECT_FOLDER)
+print("=" * 70)
+print("")
+
+
+# ============================================================
+# NORMAL IMPORTS
+# ============================================================
 
 import numpy as np
 import open3d as o3d
@@ -41,6 +214,10 @@ from deviation_reporter import DeviationReporter
 from visualizer import Visualizer
 from edge_deviation_plotter import EdgeDeviationPlotter
 
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
 
 def print_cloud_extent(name, cloud):
     bounding_box = cloud.get_axis_aligned_bounding_box()
@@ -108,11 +285,7 @@ def export_robot_base_files_for_robodk(
     cad_final,
     cad_to_scan_transform
 ):
-    export_folder = Path(
-        r"C:/Users/daryl/Desktop/Robotic D Environment Mapping/"
-        r"Robotic-3D-Environment-Mapping/RoboDK Export"
-    )
-
+    export_folder = PROJECT_FOLDER / "RoboDK Export"
     export_folder.mkdir(parents=True, exist_ok=True)
 
     raw_scan_robot_base_file = export_folder / "01_raw_merged_scan_robot_base.pcd"
@@ -155,27 +328,56 @@ def export_robot_base_files_for_robodk(
     print("=" * 70)
     print("ROBOT BASE EXPORT FOR ROBODK")
     print("=" * 70)
+
     print("Raw merged scan:")
     print(raw_scan_robot_base_file)
+
     print("")
     print("Cleaned scan in robot base frame:")
     print(cleaned_scan_robot_base_file)
+
     print("")
     print("Aligned CAD point cloud in robot base frame:")
     print(aligned_cad_pcd_robot_base_file)
+
     print("")
     print("Aligned cabinet STL in robot base frame:")
     print(aligned_cad_stl_robot_base_file)
+
     print("")
     print("CAD-to-robot-base transform:")
     print(cad_to_robot_base_transform_file)
+
     print("")
     print(cad_to_scan_transform)
     print("=" * 70)
 
 
+# ============================================================
+# MAIN PROGRAM
+# ============================================================
+
 def main():
     config = Config()
+
+    # This avoids crashing if an old config.py is accidentally loaded.
+    # But if your config.py has print_paths(), it will print all paths.
+    if hasattr(config, "print_paths"):
+        config.print_paths()
+    else:
+        print("")
+        print("=" * 70)
+        print("CONFIG PATH CHECK")
+        print("=" * 70)
+        print("Repository folder:", config.REPOSITORY_FOLDER)
+        print("Point cloud folder:", config.POINT_CLOUD_TESTING_FOLDER)
+        print("CAD model folder:", config.CAD_MODEL_FOLDER)
+        print("Scan file:", config.SCAN_FILE)
+        print("Scan exists:", config.SCAN_FILE.exists())
+        print("CAD file:", config.CAD_FILE)
+        print("CAD exists:", config.CAD_FILE.exists())
+        print("=" * 70)
+        print("")
 
     processor = PointCloudProcessor(config)
     plane_detector = PlaneDetector(config)
@@ -323,7 +525,10 @@ def main():
             str(config.CLEANED_SCAN_FILE),
             scan_filtered
         )
-        print("Saved cleaned scan inside STL/CAD range to:", config.CLEANED_SCAN_FILE)
+
+        print("")
+        print("Saved cleaned scan inside STL/CAD range to:")
+        print(config.CLEANED_SCAN_FILE)
 
     visualizer.show_final_result(
         scan_filtered,

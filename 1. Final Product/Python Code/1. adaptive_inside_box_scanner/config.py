@@ -65,10 +65,11 @@ class Config:
 
     MIN_REFERENCE_POINTS: int = 1000
 
-    OUTPUT_FOLDER: Path = Path(
-        "C:/Users/daryl/Desktop/Robotic D Environment Mapping/"
-        "Robotic-3D-Environment-Mapping/Point Cloud Testing Folder"
+    PROJECT_FOLDER: Path = field(
+        default_factory=lambda: Path(__file__).resolve().parent
     )
+
+    OUTPUT_FOLDER_NAME: str = "output"
     OUTPUT_CLEAN_FILE_NAME: str = "adaptive_inside_box_pointcloud_clean.pcd"
 
     AUTO_CENTER_BEFORE_SCAN: bool = True
@@ -106,6 +107,13 @@ class Config:
 
     AUTO_WINDOW_NAME: str = "Automatic Box Centering"
     AUTO_MASK_WINDOW_NAME: str = "Automatic Depth Mask"
+
+    def __post_init__(self):
+        self.OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def OUTPUT_FOLDER(self) -> Path:
+        return self.PROJECT_FOLDER / self.OUTPUT_FOLDER_NAME
 
     @property
     def OUTPUT_CLEAN_FILE(self) -> Path:

@@ -1,26 +1,108 @@
 import sys
 from pathlib import Path
 
-sys.path.append("C:/RoboDK/Python")
+
+ROBODK_PYTHON_FOLDER = Path("C:/RoboDK/Python")
+
+if ROBODK_PYTHON_FOLDER.exists():
+    sys.path.insert(0, str(ROBODK_PYTHON_FOLDER))
 
 from robodk.robolink import Robolink, ITEM_TYPE_ROBOT
 
 
-PROJECT_FOLDER = Path(
-    r"C:\Users\daryl\Desktop\Robotic D Environment Mapping\Robotic-3D-Environment-Mapping\1. Final Product\Python Code\6. angled_tip_path"
-)
+PROJECT_FOLDER_NAME = "6. angled_tip_path"
 
-CURRENT_FOLDER = Path(__file__).resolve().parent
+REQUIRED_PROJECT_FILES = [
+    "config.py",
+    "angled_tcp_pose_builder.py",
+    "angled_tip_path_service.py",
+    "camera_calibration.py",
+    "debug_target_service.py",
+    "robot_controller.py",
+    "seam_path_generator.py",
+]
 
-if (PROJECT_FOLDER / "config.py").exists():
-    sys.path.insert(0, str(PROJECT_FOLDER))
-elif (CURRENT_FOLDER / "config.py").exists():
-    sys.path.insert(0, str(CURRENT_FOLDER))
-else:
-    raise FileNotFoundError(
-        "config.py was not found. Change PROJECT_FOLDER in main.py "
-        "to the real folder that contains config.py."
+
+def is_correct_project_folder(folder: Path) -> bool:
+    return folder.exists() and folder.is_dir() and all(
+        (folder / file_name).exists()
+        for file_name in REQUIRED_PROJECT_FILES
     )
+
+
+def find_project_folder() -> Path:
+    current_folder = Path(__file__).resolve().parent
+    working_folder = Path.cwd().resolve()
+    home_folder = Path.home()
+
+    possible_folders = [
+        current_folder,
+        working_folder,
+        home_folder / "Desktop" / PROJECT_FOLDER_NAME,
+        home_folder / "OneDrive" / "Desktop" / PROJECT_FOLDER_NAME,
+        home_folder / "Documents" / PROJECT_FOLDER_NAME,
+        home_folder / "Downloads" / PROJECT_FOLDER_NAME,
+    ]
+
+    possible_folders.extend(current_folder.parents)
+    possible_folders.extend(working_folder.parents)
+
+    for folder in possible_folders:
+        if is_correct_project_folder(folder):
+            return folder.resolve()
+
+    search_locations = [
+        home_folder / "Desktop",
+        home_folder / "OneDrive" / "Desktop",
+        home_folder / "Documents",
+        home_folder / "Downloads",
+        home_folder,
+    ]
+
+    for search_location in search_locations:
+        if not search_location.exists():
+            continue
+
+        try:
+            for folder in search_location.rglob(PROJECT_FOLDER_NAME):
+                if is_correct_project_folder(folder):
+                    return folder.resolve()
+        except PermissionError:
+            continue
+
+    raise FileNotFoundError(
+        "Could not find the project folder automatically.\n\n"
+        f"Expected folder name:\n{PROJECT_FOLDER_NAME}\n\n"
+        "The folder must contain:\n"
+        + "\n".join(f"- {file_name}" for file_name in REQUIRED_PROJECT_FILES)
+        + "\n\n"
+        "Place the full project folder inside Desktop, OneDrive/Desktop, "
+        "Documents, Downloads, or your user folder."
+    )
+
+
+PROJECT_FOLDER = find_project_folder()
+
+project_folder_string = str(PROJECT_FOLDER)
+
+if project_folder_string in sys.path:
+    sys.path.remove(project_folder_string)
+
+sys.path.insert(0, project_folder_string)
+
+for module_name in [
+    "config",
+    "angled_tcp_pose_builder",
+    "angled_tip_path_service",
+    "camera_calibration",
+    "debug_target_service",
+    "robot_controller",
+    "seam_path_generator",
+]:
+    sys.modules.pop(module_name, None)
+
+print("Using project folder:")
+print(PROJECT_FOLDER)
 
 from angled_tcp_pose_builder import AngledTcpPoseBuilder
 from angled_tip_path_service import AngledTipPathService
