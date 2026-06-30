@@ -1,470 +1,593 @@
-# Import NumPy.
-# NumPy is used here for working with arrays and calculating min/max axis ranges.
+# Bring in numpy so this file can use it.
 import numpy as np
 
-# Import Matplotlib's pyplot module.
-# This is used to create and display the 3D graph.
+
+# Bring in matplotlib.pyplot so this file can use it.
 import matplotlib.pyplot as plt
 
-# Import Poly3DCollection.
-# This is used to draw 3D polygon surfaces, such as transparent box faces.
+
+# Bring in needed tools from mpl_toolkits.mplot3d.art3d.
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 
-# Define a class called EdgeDeviationPlotter.
-# This class is responsible for visualizing the difference between
-# a CAD/STL model and a scanned PCD point cloud.
+# Create the EdgeDeviationPlotter class, which groups related code together.
 class EdgeDeviationPlotter:
-    """
-    Creates a 3D visual explanation of the edge/corner deviation between
-    the CAD/STL model and the PCD scan.
 
-    Blue wireframe  = PCD/scan edges
-    Black wireframe = CAD/STL edges
-    Red arrows      = difference between CAD corners and scan corners
-    """
 
-    # Constructor method.
-    # This runs when an EdgeDeviationPlotter object is created.
+    # Create the setup function that runs when this object is made.
     def __init__(self, scale_to_mm=True):
-        # Store whether points should be converted from metres to millimetres.
-        # By default, this is True.
+
+
+        # Save this value inside the object for later.
         self.scale_to_mm = scale_to_mm
 
-    # Method for scaling a point.
-    # This is used to convert point coordinates from metres to millimetres.
+
+    # Create the scale point function.
     def scale_point(self, point):
-        # If scale_to_mm is True, convert the point from metres to millimetres.
+
+        # Check this condition before choosing what happens next.
         if self.scale_to_mm:
-            # Multiply the whole point by 1000.
-            # Example: 0.5 m becomes 500 mm.
+
+
+            # Send this result back to the part of the code that asked for it.
             return point * 1000.0
 
-        # If scale_to_mm is False, return the original point without conversion.
+
+        # Send this result back to the part of the code that asked for it.
         return point
 
-    # Method for building the 6 faces of a box from 8 corner points.
-    # The input "corners" is a dictionary containing the 8 box corners.
+
+    # Create the build box faces function.
     def build_box_faces(self, corners):
-        # Return a list of 6 faces.
-        # Each face is made from 4 corner points.
+
+
+        # Send this result back to the part of the code that asked for it.
         return [
-            # Face 1: bottom face of the box.
-            # All points have Z-min, so they are on the bottom plane.0
-            # The order 1 → 2 → 4 → 3 goes around the rectangle correctly.
+
+
+            # Start a group of values.
             [
+                # Add this value to the current group.
                 corners["1. X-min Y-min Z-min"],
+                # Add this value to the current group.
                 corners["2. X-max Y-min Z-min"],
+                # Add this value to the current group.
                 corners["4. X-max Y-max Z-min"],
+                # Add this value to the current group.
                 corners["3. X-min Y-max Z-min"],
             ],
 
-            # Face 2: top face of the box.
-            # All points have Z-max, so they are on the top plane.
+
+            # Start a group of values.
             [
+                # Add this value to the current group.
                 corners["5. X-min Y-min Z-max"],
+                # Add this value to the current group.
                 corners["6. X-max Y-min Z-max"],
+                # Add this value to the current group.
                 corners["8. X-max Y-max Z-max"],
+                # Add this value to the current group.
                 corners["7. X-min Y-max Z-max"],
             ],
 
-            # Face 3: side face at Y-min.
-            # This connects the bottom Y-min edge to the top Y-min edge.
+
+            # Start a group of values.
             [
+                # Add this value to the current group.
                 corners["1. X-min Y-min Z-min"],
+                # Add this value to the current group.
                 corners["2. X-max Y-min Z-min"],
+                # Add this value to the current group.
                 corners["6. X-max Y-min Z-max"],
+                # Add this value to the current group.
                 corners["5. X-min Y-min Z-max"],
             ],
 
-            # Face 4: side face at Y-max.
-            # This connects the bottom Y-max edge to the top Y-max edge.
+
+            # Start a group of values.
             [
+                # Add this value to the current group.
                 corners["3. X-min Y-max Z-min"],
+                # Add this value to the current group.
                 corners["4. X-max Y-max Z-min"],
+                # Add this value to the current group.
                 corners["8. X-max Y-max Z-max"],
+                # Add this value to the current group.
                 corners["7. X-min Y-max Z-max"],
             ],
 
-            # Face 5: side face at X-min.
-            # This connects the bottom X-min edge to the top X-min edge.
+
+            # Start a group of values.
             [
+                # Add this value to the current group.
                 corners["1. X-min Y-min Z-min"],
+                # Add this value to the current group.
                 corners["3. X-min Y-max Z-min"],
+                # Add this value to the current group.
                 corners["7. X-min Y-max Z-max"],
+                # Add this value to the current group.
                 corners["5. X-min Y-min Z-max"],
             ],
 
-            # Face 6: side face at X-max.
-            # This connects the bottom X-max edge to the top X-max edge.
+
+            # Start a group of values.
             [
+                # Add this value to the current group.
                 corners["2. X-max Y-min Z-min"],
+                # Add this value to the current group.
                 corners["4. X-max Y-max Z-min"],
+                # Add this value to the current group.
                 corners["8. X-max Y-max Z-max"],
+                # Add this value to the current group.
                 corners["6. X-max Y-min Z-max"],
             ],
         ]
 
-    # Method for drawing edge lines in the 3D graph.
-    # It can draw either CAD edges or PCD scan edges.
+
+    # Create the plot edges function.
     def plot_edges(self, ax, edges, color, line_style, label):
-        # This variable is used to make sure the legend label is only added once.
-        # Without this, every edge would create a duplicate legend entry.
+
+
+        # Save a value in first line.
         first_line = True
 
-        # Loop through every edge in the edges dictionary.
-        # The underscore "_" means we do not use the edge name.
-        # We only need the edge start and end points.
+
+        # Repeat this code for every item in the group.
         for _, edge in edges.items():
-            # Get the first point of the edge and scale it if needed.
+
+            # Save a value in start point.
             start_point = self.scale_point(edge[0])
 
-            # Get the second point of the edge and scale it if needed.
+
+            # Save a value in end point.
             end_point = self.scale_point(edge[1])
 
-            # Draw one 3D line between the start point and end point.
+
+            # Run this line as one small step in the program.
             ax.plot(
-                # X coordinates: start X to end X.
+
+                # Start a group of values.
                 [start_point[0], end_point[0]],
 
-                # Y coordinates: start Y to end Y.
+
+                # Start a group of values.
                 [start_point[1], end_point[1]],
 
-                # Z coordinates: start Z to end Z.
+
+                # Start a group of values.
                 [start_point[2], end_point[2]],
 
-                # Set the line color.
-                # Example: black for CAD, blue for PCD.
+
+                # Save a value in color.
                 color=color,
 
-                # Set the line style.
-                # Example: "-" for solid, "--" for dashed.
+
+                # Save a value in linestyle.
                 linestyle=line_style,
 
-                # Set the line thickness.
+
+                # Save a value in linewidth.
                 linewidth=2,
 
-                # Add the label only for the first line.
-                # This avoids duplicate labels in the legend.
+
+                # Save a value in label.
                 label=label if first_line else None
             )
 
-            # After the first edge is drawn, set first_line to False.
-            # The remaining edges will not add another legend label.
+
+            # Save a value in first line.
             first_line = False
 
-    # Method for drawing corner points in the 3D graph.
-    # It can draw either CAD corners or PCD scan corners.
+
+    # Create the plot corners function.
     def plot_corners(self, ax, corners, color):
-        # Loop through every corner in the corners dictionary.
-        # The underscore "_" means we do not use the corner label here.
+
+
+        # Repeat this code for every item in the group.
         for _, corner in corners.items():
-            # Scale the corner point if needed.
+
+            # Save a value in point.
             point = self.scale_point(corner)
 
-            # Draw the corner as a visible dot in the 3D plot.
+
+            # Run this line as one small step in the program.
             ax.scatter(
-                # X coordinate of the point.
+
+                # Add this value to the current group.
                 point[0],
 
-                # Y coordinate of the point.
+
+                # Add this value to the current group.
                 point[1],
 
-                # Z coordinate of the point.
+
+                # Add this value to the current group.
                 point[2],
 
-                # Color of the corner point.
-                # Example: yellow for CAD, cyan for PCD.
+
+                # Save a value in color.
                 color=color,
 
-                # Size of the point.
+
+                # Save a value in s.
                 s=45,
 
-                # Add a black border around the point so it is easier to see.
+
+                # Save a value in edgecolors.
                 edgecolors="black",
 
-                # Draw the point above other objects.
+
+                # Save a value in zorder.
                 zorder=5
             )
 
-    # Method for drawing red arrows between CAD corners and PCD scan corners.
-    # These arrows show the corner deviation.
+
+    # Create the plot corner arrows function.
     def plot_corner_arrows(self, ax, scan_corners, cad_corners):
-        # This variable is used to make sure the legend label is only added once.
+
+        # Save a value in first arrow.
         first_arrow = True
 
-        # Loop through each CAD corner label.
-        # The same label is used to find the matching scan corner.
+
+        # Repeat this code for every item in the group.
         for corner_label in cad_corners:
-            # Get the CAD corner and scale it if needed.
+
+            # Save a value in cad corner.
             cad_corner = self.scale_point(cad_corners[corner_label])
 
-            # Get the matching scan corner and scale it if needed.
+
+            # Save a value in scan corner.
             scan_corner = self.scale_point(scan_corners[corner_label])
 
-            # Calculate the difference between the scan corner and CAD corner.
-            # This gives the direction and size of the deviation.
-            # Formula: deviation vector = scan corner - CAD corner.
+
+            # Save a value in direction.
             direction = scan_corner - cad_corner
 
-            # Draw a 3D arrow from the CAD corner to the scan corner.
+
+            # Run this line as one small step in the program.
             ax.quiver(
-                # Starting X position of the arrow.
+
+                # Add this value to the current group.
                 cad_corner[0],
 
-                # Starting Y position of the arrow.
+
+                # Add this value to the current group.
                 cad_corner[1],
 
-                # Starting Z position of the arrow.
+
+                # Add this value to the current group.
                 cad_corner[2],
 
-                # Arrow direction in X.
+
+                # Add this value to the current group.
                 direction[0],
 
-                # Arrow direction in Y.
+
+                # Add this value to the current group.
                 direction[1],
 
-                # Arrow direction in Z.
+
+                # Add this value to the current group.
                 direction[2],
 
-                # Set the arrow color to red.
+
+                # Save a value in color.
                 color="red",
 
-                # Control the size of the arrow head.
+
+                # Save a value in arrow length ratio.
                 arrow_length_ratio=0.25,
 
-                # Set the arrow line thickness.
+
+                # Save a value in linewidth.
                 linewidth=2,
 
-                # Add the label only for the first arrow.
+
+                # Save a value in label.
                 label="Corner deviation" if first_arrow else None
             )
 
-            # After the first arrow is drawn, set first_arrow to False.
-            # The remaining arrows will not add duplicate legend labels.
+
+            # Save a value in first arrow.
             first_arrow = False
 
-    # Method for drawing transparent box surfaces.
-    # It uses the 8 corners to build 6 faces and draws them as transparent polygons.
+
+    # Create the plot transparent faces function.
     def plot_transparent_faces(self, ax, corners, color, alpha):
-        # Build the 6 box faces from the 8 corners.
+
+        # Save a value in faces.
         faces = self.build_box_faces(corners)
 
-        # Create an empty list to store the scaled faces.
+
+        # Save a value in scaled faces.
         scaled_faces = []
 
-        # Loop through every face.
+
+        # Repeat this code for every item in the group.
         for face in faces:
-            # Scale every point in the current face.
+
+            # Save a value in scaled face.
             scaled_face = [self.scale_point(point) for point in face]
 
-            # Add the scaled face to the list.
+
+            # Add this item to the list.
             scaled_faces.append(scaled_face)
 
-        # Create a 3D polygon collection from the scaled faces.
+
+        # Save a value in collection.
         collection = Poly3DCollection(
-            # The list of 3D faces.
+
+            # Add this value to the current group.
             scaled_faces,
 
-            # Transparency value.
-            # Lower value means more transparent.
+
+            # Save a value in alpha.
             alpha=alpha,
 
-            # Surface color.
-            # Example: cyan for scan, yellow for CAD.
+
+            # Save a value in facecolor.
             facecolor=color,
 
-            # Border color of the faces.
+
+            # Save a value in edgecolor.
             edgecolor="black",
 
-            # Border line thickness.
+
+            # Save a value in linewidths.
             linewidths=0.5
         )
 
-        # Add the transparent 3D faces to the graph.
+
+        # Run this line as one small step in the program.
         ax.add_collection3d(collection)
 
-    # Method for making the X, Y, and Z axes use the same scale.
-    # This prevents the 3D graph from looking stretched or misleading.
+
+    # Create the set equal axes function.
     def set_equal_axes(self, ax, all_points):
-        # Scale all points if needed and convert them into a NumPy array.
+
+        # Put these numbers into a NumPy array.
         points = np.array([self.scale_point(point) for point in all_points])
 
-        # Find the minimum and maximum X values.
+
+        # Save a value in x limits.
         x_limits = [points[:, 0].min(), points[:, 0].max()]
 
-        # Find the minimum and maximum Y values.
+
+        # Save a value in y limits.
         y_limits = [points[:, 1].min(), points[:, 1].max()]
 
-        # Find the minimum and maximum Z values.
+
+        # Save a value in z limits.
         z_limits = [points[:, 2].min(), points[:, 2].max()]
 
-        # Calculate the full X range.
+
+        # Save a value in x range.
         x_range = x_limits[1] - x_limits[0]
 
-        # Calculate the full Y range.
+
+        # Save a value in y range.
         y_range = y_limits[1] - y_limits[0]
 
-        # Calculate the full Z range.
+
+        # Save a value in z range.
         z_range = z_limits[1] - z_limits[0]
 
-        # Find the largest range among X, Y, and Z.
-        # This largest range will be used for all axes.
+
+        # Save a value in max range.
         max_range = max(x_range, y_range, z_range)
 
-        # Find the center position of the X axis.
+
+        # Save a value in x center.
         x_center = sum(x_limits) / 2.0
 
-        # Find the center position of the Y axis.
+
+        # Save a value in y center.
         y_center = sum(y_limits) / 2.0
 
-        # Find the center position of the Z axis.
+
+        # Save a value in z center.
         z_center = sum(z_limits) / 2.0
 
-        # Set the X-axis limit using the same max range.
+
+        # Run this line as one small step in the program.
         ax.set_xlim(x_center - max_range / 2.0, x_center + max_range / 2.0)
 
-        # Set the Y-axis limit using the same max range.
+
+        # Run this line as one small step in the program.
         ax.set_ylim(y_center - max_range / 2.0, y_center + max_range / 2.0)
 
-        # Set the Z-axis limit using the same max range.
+
+        # Run this line as one small step in the program.
         ax.set_zlim(z_center - max_range / 2.0, z_center + max_range / 2.0)
 
-    # Main method of this class.
-    # This method controls the full visualization process.
+
+    # Create the show edge deviation function.
     def show_edge_deviation(self, deviation_reporter, scan_pcd, cad_pcd):
-        # Ask the deviation reporter to calculate the edge deviation report.
-        # scan_pcd is the scanned point cloud.
-        # cad_pcd is the CAD/STL model converted into a point cloud.
+
+
+        # Save a value in report.
         report = deviation_reporter.calculate_edge_deviation_report(
+            # Add this value to the current group.
             scan_pcd,
+            # Run this line as one small step in the program.
             cad_pcd
         )
 
-        # Build the 8 bounding-box corners for the scan/PCD.
-        # These are created from the scan minimum and maximum bounds.
+
+        # Save a value in scan corners.
         scan_corners = deviation_reporter.build_corners(
+            # Add this value to the current group.
             report["scan_min_bound"],
+            # Run this line as one small step in the program.
             report["scan_max_bound"]
         )
 
-        # Build the 8 bounding-box corners for the CAD/STL model.
-        # These are created from the CAD minimum and maximum bounds.
+
+        # Save a value in cad corners.
         cad_corners = deviation_reporter.build_corners(
+            # Add this value to the current group.
             report["cad_min_bound"],
+            # Run this line as one small step in the program.
             report["cad_max_bound"]
         )
 
-        # Build the 12 edges of the scan box from the scan corners.
+
+        # Save a value in scan edges.
         scan_edges = deviation_reporter.build_edges(scan_corners)
 
-        # Build the 12 edges of the CAD box from the CAD corners.
+
+        # Save a value in cad edges.
         cad_edges = deviation_reporter.build_edges(cad_corners)
 
-        # Create a Matplotlib figure with size 12 by 9.
+
+        # Save a value in fig.
         fig = plt.figure(figsize=(12, 9))
 
-        # Add a 3D subplot to the figure.
+
+        # Save a value in ax.
         ax = fig.add_subplot(111, projection="3d")
 
-        # Draw the scan/PCD bounding box as transparent cyan faces.
+
+        # Run this line as one small step in the program.
         self.plot_transparent_faces(
+            # Add this value to the current group.
             ax,
+            # Add this value to the current group.
             scan_corners,
+            # Save a value in color.
             color="cyan",
+            # Save a value in alpha.
             alpha=0.25
         )
 
-        # Draw the CAD/STL bounding box as transparent yellow faces.
+
+        # Run this line as one small step in the program.
         self.plot_transparent_faces(
+            # Add this value to the current group.
             ax,
+            # Add this value to the current group.
             cad_corners,
+            # Save a value in color.
             color="yellow",
+            # Save a value in alpha.
             alpha=0.25
         )
 
-        # Draw the CAD/STL edges.
-        # These are black solid lines.
+
+        # Run this line as one small step in the program.
         self.plot_edges(
+            # Add this value to the current group.
             ax,
+            # Add this value to the current group.
             cad_edges,
+            # Save a value in color.
             color="black",
+            # Save a value in line style.
             line_style="-",
+            # Save a value in label.
             label="CAD/STL edges"
         )
 
-        # Draw the scan/PCD edges.
-        # These are blue dashed lines.
+
+        # Run this line as one small step in the program.
         self.plot_edges(
+            # Add this value to the current group.
             ax,
+            # Add this value to the current group.
             scan_edges,
+            # Save a value in color.
             color="blue",
+            # Save a value in line style.
             line_style="--",
+            # Save a value in label.
             label="PCD/scan edges"
         )
 
-        # Draw the CAD/STL corners as yellow points.
+
+        # Run this line as one small step in the program.
         self.plot_corners(
+            # Add this value to the current group.
             ax,
+            # Add this value to the current group.
             cad_corners,
+            # Save a value in color.
             color="yellow"
         )
 
-        # Draw the scan/PCD corners as cyan points.
+
+        # Run this line as one small step in the program.
         self.plot_corners(
+            # Add this value to the current group.
             ax,
+            # Add this value to the current group.
             scan_corners,
+            # Save a value in color.
             color="cyan"
         )
 
-        # Draw red arrows from CAD corners to matching scan corners.
-        # These arrows represent the deviation.
+
+        # Run this line as one small step in the program.
         self.plot_corner_arrows(
+            # Add this value to the current group.
             ax,
+            # Add this value to the current group.
             scan_corners,
+            # Run this line as one small step in the program.
             cad_corners
         )
 
-        # Create an empty list to store all corner points.
+
+        # Save a value in all points.
         all_points = []
 
-        # Add all scan corner points to the list.
+
+        # Repeat this code for every item in the group.
         for corner in scan_corners.values():
+            # Add this item to the list.
             all_points.append(corner)
 
-        # Add all CAD corner points to the list.
+
+        # Repeat this code for every item in the group.
         for corner in cad_corners.values():
+            # Add this item to the list.
             all_points.append(corner)
 
-        # Set equal scaling for the X, Y, and Z axes.
-        # This prevents the graph from looking stretched.
+
+        # Run this line as one small step in the program.
         self.set_equal_axes(ax, all_points)
 
-        # Decide which unit label should be shown on the axes.
-        # If scale_to_mm is True, use mm.
-        # Otherwise, use m.
+
+        # Save a value in unit.
         unit = "mm" if self.scale_to_mm else "m"
 
-        # Set the title of the 3D graph.
+
+        # Run this line as one small step in the program.
         ax.set_title("CAD/STL vs PCD Corner Deviation")
 
-        # Set the X-axis label.
+
+        # Run this line as one small step in the program.
         ax.set_xlabel(f"X ({unit})")
 
-        # Set the Y-axis label.
+
+        # Run this line as one small step in the program.
         ax.set_ylabel(f"Y ({unit})")
 
-        # Set the Z-axis label.
+
+        # Run this line as one small step in the program.
         ax.set_zlabel(f"Z ({unit})")
 
-        # Show the graph legend.
+
+        # Run this line as one small step in the program.
         ax.legend()
 
-        # Show grid lines in the graph.
+
+        # Run this line as one small step in the program.
         ax.grid(True)
 
-        # Adjust the layout so labels and graph fit better.
+
+        # Run this line as one small step in the program.
         plt.tight_layout()
 
-        # Display the final 3D graph.
+
+        # Run this line as one small step in the program.
         plt.show()

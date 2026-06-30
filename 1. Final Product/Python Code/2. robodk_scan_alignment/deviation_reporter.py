@@ -1,1020 +1,1032 @@
-# Import NumPy.
-# NumPy helps us work with numbers, points, arrays, and 3D math.
+# Bring in numpy so this file can use it.
 import numpy as np
 
 
+# Create the DeviationReporter class, which groups related code together.
 class DeviationReporter:
-    """
-    This class creates reports that compare two 3D models:
 
-    1. The PCD scan:
-       - This is the real scanned point cloud from the camera.
 
-    2. The STL/CAD model:
-       - This is the clean digital 3D model.
-
-    The goal is to check:
-    "How different is the scan from the CAD model?"
-
-    This class can make two kinds of reports:
-
-    1. Room plane deviation report:
-       - Compares big flat surfaces.
-       - Example:
-         floor compared with floor,
-         wall compared with wall.
-
-    2. Edge deviation report:
-       - Compares the 12 edges of the scanned box/room/cabinet
-         with the 12 edges of the CAD model.
-       - It checks:
-         start point difference,
-         end point difference,
-         midpoint difference,
-         X difference,
-         Y difference,
-         Z difference,
-         and edge length difference.
-    """
-
+    # Create the setup function that runs when this object is made.
     def __init__(self, plane_detector=None, lower_percentile=1.0, upper_percentile=99.0):
-        """
-        This function runs automatically when we create DeviationReporter.
 
-        Example:
-        reporter = DeviationReporter()
 
-        plane_detector:
-        - Used only for the old wall/floor plane report.
-        - It finds flat surfaces like floor and walls.
-
-        lower_percentile:
-        - Used for finding the lower safe boundary of the point cloud.
-        - Example:
-          Instead of using the absolute smallest point,
-          we use the 1% point to avoid noise.
-
-        upper_percentile:
-        - Used for finding the upper safe boundary of the point cloud.
-        - Example:
-          Instead of using the absolute biggest point,
-          we use the 99% point to avoid noise.
-
-        Why?
-        - A point cloud can contain bad noisy points.
-        - These noisy points can be very far away.
-        - If we use them directly, the box size becomes wrong.
-        """
-
-        # Store the plane detector inside this class.
+        # Save this value inside the object for later.
         self.plane_detector = plane_detector
 
-        # Store the lower percentile value.
-        # This helps ignore extremely low noisy points.
+
+        # Save this value inside the object for later.
         self.lower_percentile = lower_percentile
 
-        # Store the upper percentile value.
-        # This helps ignore extremely high noisy points.
+
+        # Save this value inside the object for later.
         self.upper_percentile = upper_percentile
 
+    # Create the get oriented plane model function.
     def get_oriented_plane_model(self, plane, label):
-        """
-        This function makes sure the plane normal points in the correct direction.
 
-        A plane model looks like this:
 
-        ax + by + cz + d = 0
-
-        It has four values:
-        a, b, c, d
-
-        The normal direction is:
-        [a, b, c]
-
-        Why do we need this?
-        - A detected wall can have its normal pointing inward or outward.
-        - If the normal direction is wrong, the signed distance can be confusing.
-        - This function flips the normal if needed.
-        """
-
-        # Get the four plane values from the plane dictionary.
+        # Save several results into separate variable names.
         a, b, c, d = plane["plane_model"]
 
-        # Put the normal values into a NumPy array.
-        # The normal tells us which direction the plane is facing.
+
+        # Put these numbers into a NumPy array.
         normal = np.array([a, b, c], dtype=np.float64)
 
-        # If this is the floor, we want the normal to point upward.
-        # Upward means the Z value should be positive.
+
+        # Check this condition before choosing what happens next.
         if label == "Floor" and normal[2] < 0:
 
-            # Flip the normal direction.
+
+            # Save a value in normal.
             normal = -normal
 
-            # Also flip d because the plane equation must stay correct.
+
+            # Save a value in d.
             d = -d
 
-        # If this is the X-min wall,
-        # we want its normal to point toward negative X.
+
+        # Check another condition if the previous one was false.
         elif label == "Wall X-min" and normal[0] > 0:
 
-            # Flip the normal direction.
+
+            # Save a value in normal.
             normal = -normal
 
-            # Flip d as well.
+
+            # Save a value in d.
             d = -d
 
-        # If this is the X-max wall,
-        # we want its normal to point toward positive X.
+
+        # Check another condition if the previous one was false.
         elif label == "Wall X-max" and normal[0] < 0:
 
-            # Flip the normal direction.
+
+            # Save a value in normal.
             normal = -normal
 
-            # Flip d as well.
+
+            # Save a value in d.
             d = -d
 
-        # If this is the Y-min wall,
-        # we want its normal to point toward negative Y.
+
+        # Check another condition if the previous one was false.
         elif label == "Wall Y-min" and normal[1] > 0:
 
-            # Flip the normal direction.
+
+            # Save a value in normal.
             normal = -normal
 
-            # Flip d as well.
+
+            # Save a value in d.
             d = -d
 
-        # If this is the Y-max wall,
-        # we want its normal to point toward positive Y.
+
+        # Check another condition if the previous one was false.
         elif label == "Wall Y-max" and normal[1] < 0:
 
-            # Flip the normal direction.
+
+            # Save a value in normal.
             normal = -normal
 
-            # Flip d as well.
+
+            # Save a value in d.
             d = -d
 
-        # Return the corrected plane model.
+
+        # Put these numbers into a NumPy array.
         return np.array([normal[0], normal[1], normal[2], d], dtype=np.float64)
 
+    # Create the calculate plane deviation function.
     def calculate_plane_deviation(self, scan_plane, cad_plane, label):
-        """
-        This function compares one scanned plane with one CAD plane.
 
-        Example:
-        - Scanned floor compared with CAD floor.
-        - Scanned wall compared with CAD wall.
 
-        It measures how far the scan points are from the CAD plane.
-        """
-
-        # Get the CAD plane with the correct normal direction.
+        # Save a value in cad plane model.
         cad_plane_model = self.get_oriented_plane_model(cad_plane, label)
 
-        # Split the CAD plane equation into a, b, c, d.
+
+        # Save several results into separate variable names.
         a, b, c, d = cad_plane_model
 
-        # Create the normal vector from a, b, c.
+
+        # Put these numbers into a NumPy array.
         normal = np.array([a, b, c], dtype=np.float64)
 
-        # Calculate the length of the normal vector.
-        # This is needed to calculate the real distance to the plane.
+
+        # Measure how long this vector is.
         normal_length = np.linalg.norm(normal)
 
-        # If the normal length is zero, the plane is invalid.
-        # A plane cannot have a normal with zero length.
+
+        # Check this condition before choosing what happens next.
         if normal_length == 0:
+            # Stop the program and show a clear error message.
             raise Exception("Invalid CAD plane normal.")
 
-        # Get all points from the scanned plane.
+
+        # Change the Open3D points into NumPy numbers.
         points = np.asarray(scan_plane["cloud"].points)
 
-        # Calculate signed distance from every scan point to the CAD plane.
-        #
-        # Formula:
-        # distance = (point dot normal + d) / normal_length
-        #
-        # Positive distance means the point is on one side of the plane.
-        # Negative distance means the point is on the other side.
+
+        # Save a value in signed distances.
         signed_distances = (points @ normal + d) / normal_length
 
-        # Convert all distances to positive values.
-        # This only tells us "how far", not direction.
+
+        # Save a value in absolute distances.
         absolute_distances = np.abs(signed_distances)
 
-        # Return useful deviation values.
+
+        # Send this result back to the part of the code that asked for it.
         return {
-            # Average absolute distance.
+
+            # Store this named value inside a dictionary.
             "mean_abs_m": float(np.mean(absolute_distances)),
 
-            # Middle value of the distances.
+
+            # Store this named value inside a dictionary.
             "median_abs_m": float(np.median(absolute_distances)),
 
-            # RMSE gives a strong measurement of error.
-            # Bigger errors affect RMSE more.
+
+            # Store this named value inside a dictionary.
             "rmse_m": float(np.sqrt(np.mean(signed_distances ** 2))),
 
-            # Biggest absolute distance found.
+
+            # Store this named value inside a dictionary.
             "max_abs_m": float(np.max(absolute_distances)),
 
-            # Average signed distance.
-            # This still keeps direction.
+
+            # Store this named value inside a dictionary.
             "signed_mean_m": float(np.mean(signed_distances)),
 
-            # Number of scan points used.
+
+            # Count how many points are inside this object.
             "scan_points": len(points),
         }
 
+    # Create the print room deviation report function.
     def print_room_deviation_report(self, scan_pcd, cad_pcd):
-        """
-        This function prints the old room deviation report.
 
-        It compares:
-        - Floor
-        - Wall X-min
-        - Wall X-max
-        - Wall Y-min
-        - Wall Y-max
 
-        It uses plane detection.
-        """
-
-        # If there is no plane detector, this report cannot work.
+        # Check this condition before choosing what happens next.
         if self.plane_detector is None:
+            # Stop the program and show a clear error message.
             raise Exception("Plane detector is required for room deviation report.")
 
-        # Print an empty line for cleaner output.
+
+        # Show helpful information on the screen.
         print("")
 
-        # Tell the user what is happening.
+
+        # Show helpful information on the screen.
         print("Measuring wall and floor deviation...")
 
-        # Detect flat planes in the scanned point cloud.
+
+        # Save a value in scan planes.
         scan_planes = self.plane_detector.detect_planes(scan_pcd)
 
-        # Detect flat planes in the CAD point cloud.
+
+        # Save a value in cad planes.
         cad_planes = self.plane_detector.detect_planes(cad_pcd)
 
-        # Calculate the center of the CAD point cloud.
-        # This helps label which wall is which.
+
+        # Change the Open3D points into NumPy numbers.
         cad_center = np.asarray(cad_pcd.points).mean(axis=0)
 
-        # Label the scanned planes.
-        # Example:
-        # This plane is Floor.
-        # This plane is Wall X-min.
+
+        # Save a value in scan labelled.
         scan_labelled = self.plane_detector.label_room_planes(
+            # Add this value to the current group.
             scan_planes,
+            # Run this line as one small step in the program.
             cad_center
         )
 
-        # Label the CAD planes.
+
+        # Save a value in cad labelled.
         cad_labelled = self.plane_detector.label_room_planes(
+            # Add this value to the current group.
             cad_planes,
+            # Run this line as one small step in the program.
             cad_center
         )
 
-        # These are the planes we want to compare.
+
+        # Save a value in labels.
         labels = [
+            # Start a group of values.
             ("1. Floor", "Floor"),
+            # Start a group of values.
             ("2. Wall X-min", "Wall X-min"),
+            # Start a group of values.
             ("3. Wall X-max", "Wall X-max"),
+            # Start a group of values.
             ("4. Wall Y-min", "Wall Y-min"),
+            # Start a group of values.
             ("5. Wall Y-max", "Wall Y-max"),
         ]
 
-        # Print report title.
+
+        # Show helpful information on the screen.
         print("")
+        # Show helpful information on the screen.
         print("Room deviation report:")
+        # Show helpful information on the screen.
         print("Reference: STL/CAD model")
+        # Show helpful information on the screen.
         print("Measured : PCD scan")
+        # Show helpful information on the screen.
         print("Unit     : centimeters")
+        # Show helpful information on the screen.
         print("")
 
-        # Go through every plane label.
+
+        # Repeat this code for every item in the group.
         for display_label, label in labels:
 
-            # If the CAD plane was not found, skip it.
+
+            # Check this condition before choosing what happens next.
             if label not in cad_labelled:
+                # Show helpful information on the screen.
                 print(f"{display_label}: CAD plane not found.")
+                # Show helpful information on the screen.
                 print("")
+                # Skip the rest of this loop and go to the next item.
                 continue
 
-            # If the scan plane was not found, skip it.
+
+            # Check this condition before choosing what happens next.
             if label not in scan_labelled:
+                # Show helpful information on the screen.
                 print(f"{display_label}: scan plane not found.")
+                # Show helpful information on the screen.
                 print("")
+                # Skip the rest of this loop and go to the next item.
                 continue
 
-            # Calculate the deviation between scan plane and CAD plane.
+
+            # Save a value in result.
             result = self.calculate_plane_deviation(
+                # Add this value to the current group.
                 scan_labelled[label],
+                # Add this value to the current group.
                 cad_labelled[label],
+                # Run this line as one small step in the program.
                 label
             )
 
-            # Print the result in centimeters.
+
+            # Show helpful information on the screen.
             print(display_label)
+            # Show helpful information on the screen.
             print(f"  Mean absolute difference : {result['mean_abs_m'] * 100:.2f} cm")
+            # Show helpful information on the screen.
             print(f"  Median difference        : {result['median_abs_m'] * 100:.2f} cm")
+            # Show helpful information on the screen.
             print(f"  RMSE                     : {result['rmse_m'] * 100:.2f} cm")
+            # Show helpful information on the screen.
             print(f"  Maximum difference       : {result['max_abs_m'] * 100:.2f} cm")
+            # Show helpful information on the screen.
             print(f"  Signed mean difference   : {result['signed_mean_m'] * 100:.2f} cm")
+            # Show helpful information on the screen.
             print(f"  Scan points used         : {result['scan_points']}")
+            # Show helpful information on the screen.
             print("")
 
+    # Create the get robust bounds function.
     def get_robust_bounds(self, point_cloud):
-        """
-        This function finds the safe minimum and maximum boundary of a point cloud.
 
-        A point cloud is many tiny 3D dots.
 
-        Each dot has:
-        - X position
-        - Y position
-        - Z position
-
-        We want to find:
-        min_bound = [x_min, y_min, z_min]
-        max_bound = [x_max, y_max, z_max]
-
-        But we do not use the absolute minimum and maximum,
-        because noisy points can make the result wrong.
-
-        Instead, we use percentiles.
-
-        Example:
-        lower_percentile = 1
-        upper_percentile = 99
-
-        This means:
-        - Ignore the lowest 1% of points.
-        - Ignore the highest 1% of points.
-
-        This makes the bounding box more stable.
-        """
-
-        # Check if the point cloud has no points.
-        # If it has no points, we cannot calculate bounds.
+        # Count how many points are inside this object.
         if len(point_cloud.points) == 0:
+            # Stop the program and show a clear error message.
             raise Exception("Point cloud is empty.")
 
-        # Convert Open3D points into a NumPy array.
-        # This makes it easier to calculate with the points.
+
+        # Change the Open3D points into NumPy numbers.
         points = np.asarray(point_cloud.points)
 
-        # Calculate the safe minimum boundary.
-        #
-        # axis=0 means:
-        # calculate separately for X, Y, and Z.
-        #
-        # Result:
-        # [safe_x_min, safe_y_min, safe_z_min]
+
+        # Get a safe edge value while ignoring extreme noisy points.
         min_bound = np.percentile(
+            # Add this value to the current group.
             points,
+            # Add this value to the current group.
             self.lower_percentile,
+            # Save a value in axis.
             axis=0
         )
 
-        # Calculate the safe maximum boundary.
-        #
-        # Result:
-        # [safe_x_max, safe_y_max, safe_z_max]
+
+        # Get a safe edge value while ignoring extreme noisy points.
         max_bound = np.percentile(
+            # Add this value to the current group.
             points,
+            # Add this value to the current group.
             self.upper_percentile,
+            # Save a value in axis.
             axis=0
         )
 
-        # Return both boundaries.
+
+        # Send this result back to the part of the code that asked for it.
         return min_bound, max_bound
 
+    # Create the build corners function.
     def build_corners(self, min_bound, max_bound):
-        """
-        This function builds the 8 corners of a box.
 
-        Imagine a shoebox.
 
-        A box has:
-        - 8 corners
-        - 12 edges
-        - 6 faces
-
-        We only need the 8 corners here.
-
-        min_bound gives:
-        x_min, y_min, z_min
-
-        max_bound gives:
-        x_max, y_max, z_max
-        """
-
-        # Take the minimum X, Y, Z values.
+        # Save several results into separate variable names.
         x_min, y_min, z_min = min_bound
 
-        # Take the maximum X, Y, Z values.
+
+        # Save several results into separate variable names.
         x_max, y_max, z_max = max_bound
 
-        # Return a dictionary with all 8 corners.
-        #
-        # Bottom corners use z_min.
-        # Top corners use z_max.
+
+        # Send this result back to the part of the code that asked for it.
         return {
-            # Bottom-front-left style corner.
+
+            # Put these numbers into a NumPy array.
             "1. X-min Y-min Z-min": np.array([x_min, y_min, z_min]),
 
-            # Bottom corner with maximum X.
+
+            # Put these numbers into a NumPy array.
             "2. X-max Y-min Z-min": np.array([x_max, y_min, z_min]),
 
-            # Bottom corner with maximum Y.
+
+            # Put these numbers into a NumPy array.
             "3. X-min Y-max Z-min": np.array([x_min, y_max, z_min]),
 
-            # Bottom corner with maximum X and maximum Y.
+
+            # Put these numbers into a NumPy array.
             "4. X-max Y-max Z-min": np.array([x_max, y_max, z_min]),
 
-            # Top corner above corner 1.
+
+            # Put these numbers into a NumPy array.
             "5. X-min Y-min Z-max": np.array([x_min, y_min, z_max]),
 
-            # Top corner above corner 2.
+
+            # Put these numbers into a NumPy array.
             "6. X-max Y-min Z-max": np.array([x_max, y_min, z_max]),
 
-            # Top corner above corner 3.
+
+            # Put these numbers into a NumPy array.
             "7. X-min Y-max Z-max": np.array([x_min, y_max, z_max]),
 
-            # Top corner above corner 4.
+
+            # Put these numbers into a NumPy array.
             "8. X-max Y-max Z-max": np.array([x_max, y_max, z_max]),
         }
 
+    # Create the build edges function.
     def build_edges(self, corners):
-        """
-        This function builds the 12 edges of a box.
 
-        An edge is a line between two corners.
 
-        Example:
-        If corner 1 connects to corner 2,
-        that creates one edge.
-
-        A box has:
-        - 4 bottom edges
-        - 4 top edges
-        - 4 vertical edges
-
-        Total:
-        12 edges
-        """
-
-        # Return all 12 edges.
-        # Each edge contains two points:
-        # start point and end point.
+        # Send this result back to the part of the code that asked for it.
         return {
-            # Bottom edge going in X direction.
+
+            # Store this named value inside a dictionary.
             "1. Bottom edge X direction, Y-min Z-min": (
+                # Add this value to the current group.
                 corners["1. X-min Y-min Z-min"],
+                # Add this value to the current group.
                 corners["2. X-max Y-min Z-min"],
             ),
 
-            # Bottom edge going in X direction on the Y-max side.
+
+            # Store this named value inside a dictionary.
             "2. Bottom edge X direction, Y-max Z-min": (
+                # Add this value to the current group.
                 corners["3. X-min Y-max Z-min"],
+                # Add this value to the current group.
                 corners["4. X-max Y-max Z-min"],
             ),
 
-            # Bottom edge going in Y direction.
+
+            # Store this named value inside a dictionary.
             "3. Bottom edge Y direction, X-min Z-min": (
+                # Add this value to the current group.
                 corners["1. X-min Y-min Z-min"],
+                # Add this value to the current group.
                 corners["3. X-min Y-max Z-min"],
             ),
 
-            # Bottom edge going in Y direction on the X-max side.
+
+            # Store this named value inside a dictionary.
             "4. Bottom edge Y direction, X-max Z-min": (
+                # Add this value to the current group.
                 corners["2. X-max Y-min Z-min"],
+                # Add this value to the current group.
                 corners["4. X-max Y-max Z-min"],
             ),
 
-            # Top edge going in X direction.
+
+            # Store this named value inside a dictionary.
             "5. Top edge X direction, Y-min Z-max": (
+                # Add this value to the current group.
                 corners["5. X-min Y-min Z-max"],
+                # Add this value to the current group.
                 corners["6. X-max Y-min Z-max"],
             ),
 
-            # Top edge going in X direction on the Y-max side.
+
+            # Store this named value inside a dictionary.
             "6. Top edge X direction, Y-max Z-max": (
+                # Add this value to the current group.
                 corners["7. X-min Y-max Z-max"],
+                # Add this value to the current group.
                 corners["8. X-max Y-max Z-max"],
             ),
 
-            # Top edge going in Y direction.
+
+            # Store this named value inside a dictionary.
             "7. Top edge Y direction, X-min Z-max": (
+                # Add this value to the current group.
                 corners["5. X-min Y-min Z-max"],
+                # Add this value to the current group.
                 corners["7. X-min Y-max Z-max"],
             ),
 
-            # Top edge going in Y direction on the X-max side.
+
+            # Store this named value inside a dictionary.
             "8. Top edge Y direction, X-max Z-max": (
+                # Add this value to the current group.
                 corners["6. X-max Y-min Z-max"],
+                # Add this value to the current group.
                 corners["8. X-max Y-max Z-max"],
             ),
 
-            # Vertical edge from bottom to top.
+
+            # Store this named value inside a dictionary.
             "9. Vertical edge X-min Y-min": (
+                # Add this value to the current group.
                 corners["1. X-min Y-min Z-min"],
+                # Add this value to the current group.
                 corners["5. X-min Y-min Z-max"],
             ),
 
-            # Vertical edge from bottom to top on X-max Y-min side.
+
+            # Store this named value inside a dictionary.
             "10. Vertical edge X-max Y-min": (
+                # Add this value to the current group.
                 corners["2. X-max Y-min Z-min"],
+                # Add this value to the current group.
                 corners["6. X-max Y-min Z-max"],
             ),
 
-            # Vertical edge from bottom to top on X-min Y-max side.
+
+            # Store this named value inside a dictionary.
             "11. Vertical edge X-min Y-max": (
+                # Add this value to the current group.
                 corners["3. X-min Y-max Z-min"],
+                # Add this value to the current group.
                 corners["7. X-min Y-max Z-max"],
             ),
 
-            # Vertical edge from bottom to top on X-max Y-max side.
+
+            # Store this named value inside a dictionary.
             "12. Vertical edge X-max Y-max": (
+                # Add this value to the current group.
                 corners["4. X-max Y-max Z-min"],
+                # Add this value to the current group.
                 corners["8. X-max Y-max Z-max"],
             ),
         }
 
+    # Create the calculate edge deviation function.
     def calculate_edge_deviation(self, scan_edges, cad_edges):
-        """
-        This function compares each scan edge with the matching CAD edge.
 
-        It assumes:
-        - Edge 1 from scan matches edge 1 from CAD.
-        - Edge 2 from scan matches edge 2 from CAD.
-        - And so on until edge 12.
 
-        For each edge, it calculates:
-
-        1. Start point difference:
-           How far is the CAD start point from the scan start point?
-
-        2. End point difference:
-           How far is the CAD end point from the scan end point?
-
-        3. Midpoint difference:
-           How far is the middle of the CAD edge from the middle of the scan edge?
-
-        4. X, Y, Z midpoint difference:
-           Shows in which direction the difference happens.
-
-        5. Length difference:
-           Checks if the CAD edge is longer or shorter than the scanned edge.
-        """
-
-        # Create an empty dictionary to store all edge results.
+        # Save a value in edge results.
         edge_results = {}
 
-        # Go through each CAD edge label.
+
+        # Repeat this code for every item in the group.
         for label in cad_edges:
 
-            # Get the scan edge start and end points.
+
+            # Save several results into separate variable names.
             scan_start, scan_end = scan_edges[label]
 
-            # Get the CAD edge start and end points.
+
+            # Save several results into separate variable names.
             cad_start, cad_end = cad_edges[label]
 
-            # Calculate the middle point of the scan edge.
+
+            # Save a value in scan midpoint.
             scan_midpoint = (scan_start + scan_end) / 2.0
 
-            # Calculate the middle point of the CAD edge.
+
+            # Save a value in cad midpoint.
             cad_midpoint = (cad_start + cad_end) / 2.0
 
-            # Calculate the scan edge length.
-            #
-            # np.linalg.norm calculates the straight-line distance.
+
+            # Measure how long this vector is.
             scan_length = np.linalg.norm(scan_end - scan_start)
 
-            # Calculate the CAD edge length.
+
+            # Measure how long this vector is.
             cad_length = np.linalg.norm(cad_end - cad_start)
 
-            # Calculate the difference vector between CAD start and scan start.
-            #
-            # Example:
-            # If CAD start is [5, 2, 1]
-            # and scan start is [3, 2, 1],
-            # the difference is [2, 0, 0].
+
+            # Save a value in start difference vector.
             start_difference_vector = cad_start - scan_start
 
-            # Calculate the difference vector between CAD end and scan end.
+
+            # Save a value in end difference vector.
             end_difference_vector = cad_end - scan_end
 
-            # Calculate the difference vector between CAD midpoint and scan midpoint.
+
+            # Save a value in midpoint difference vector.
             midpoint_difference_vector = cad_midpoint - scan_midpoint
 
-            # Convert the start difference vector into one distance number.
+
+            # Measure how long this vector is.
             start_distance_m = np.linalg.norm(start_difference_vector)
 
-            # Convert the end difference vector into one distance number.
+
+            # Measure how long this vector is.
             end_distance_m = np.linalg.norm(end_difference_vector)
 
-            # Convert the midpoint difference vector into one distance number.
+
+            # Measure how long this vector is.
             midpoint_distance_m = np.linalg.norm(midpoint_difference_vector)
 
-            # Calculate how much longer or shorter the CAD edge is.
-            #
-            # Positive value:
-            # CAD edge is longer.
-            #
-            # Negative value:
-            # CAD edge is shorter.
+
+            # Save a value in length difference m.
             length_difference_m = cad_length - scan_length
 
-            # Save all values for this edge.
+
+            # Save a value in edge results[label].
             edge_results[label] = {
-                # Scan edge start point.
+
+                # Store this named value inside a dictionary.
                 "scan_start": scan_start,
 
-                # Scan edge end point.
+
+                # Store this named value inside a dictionary.
                 "scan_end": scan_end,
 
-                # CAD edge start point.
+
+                # Store this named value inside a dictionary.
                 "cad_start": cad_start,
 
-                # CAD edge end point.
+
+                # Store this named value inside a dictionary.
                 "cad_end": cad_end,
 
-                # Scan edge midpoint.
+
+                # Store this named value inside a dictionary.
                 "scan_midpoint": scan_midpoint,
 
-                # CAD edge midpoint.
+
+                # Store this named value inside a dictionary.
                 "cad_midpoint": cad_midpoint,
 
-                # Scan edge length in meters.
+
+                # Store this named value inside a dictionary.
                 "scan_length_m": float(scan_length),
 
-                # CAD edge length in meters.
+
+                # Store this named value inside a dictionary.
                 "cad_length_m": float(cad_length),
 
-                # Signed X midpoint difference.
-                # Positive means CAD is more positive in X than scan.
+
+                # Store this named value inside a dictionary.
                 "signed_x_m": float(midpoint_difference_vector[0]),
 
-                # Signed Y midpoint difference.
-                # Positive means CAD is more positive in Y than scan.
+
+                # Store this named value inside a dictionary.
                 "signed_y_m": float(midpoint_difference_vector[1]),
 
-                # Signed Z midpoint difference.
-                # Positive means CAD is higher than scan.
+
+                # Store this named value inside a dictionary.
                 "signed_z_m": float(midpoint_difference_vector[2]),
 
-                # Absolute X difference.
-                # This ignores direction.
+
+                # Store this named value inside a dictionary.
                 "absolute_x_m": float(abs(midpoint_difference_vector[0])),
 
-                # Absolute Y difference.
-                # This ignores direction.
+
+                # Store this named value inside a dictionary.
                 "absolute_y_m": float(abs(midpoint_difference_vector[1])),
 
-                # Absolute Z difference.
-                # This ignores direction.
+
+                # Store this named value inside a dictionary.
                 "absolute_z_m": float(abs(midpoint_difference_vector[2])),
 
-                # Start point distance.
+
+                # Store this named value inside a dictionary.
                 "start_distance_m": float(start_distance_m),
 
-                # End point distance.
+
+                # Store this named value inside a dictionary.
                 "end_distance_m": float(end_distance_m),
 
-                # Midpoint 3D distance.
+
+                # Store this named value inside a dictionary.
                 "midpoint_distance_m": float(midpoint_distance_m),
 
-                # Signed length difference.
+
+                # Store this named value inside a dictionary.
                 "length_difference_m": float(length_difference_m),
 
-                # Absolute length difference.
+
+                # Store this named value inside a dictionary.
                 "absolute_length_difference_m": float(abs(length_difference_m)),
             }
 
-        # Return all edge comparison results.
+
+        # Send this result back to the part of the code that asked for it.
         return edge_results
 
+    # Create the describe signed difference function.
     def describe_signed_difference(self, axis, value_m):
-        """
-        This function turns a signed number into readable text.
 
-        Example:
-        Instead of only printing:
-        Z difference = 0.05 m
 
-        It prints:
-        CAD/STL is 5.00 cm higher than PCD/scan
-
-        This makes the report easier to understand.
-        """
-
-        # Convert meters to centimeters.
+        # Save a value in value cm.
         value_cm = value_m * 100
 
-        # If the difference is extremely small,
-        # we say they are basically in the same position.
+
+        # Check this condition before choosing what happens next.
         if abs(value_cm) < 0.005:
+            # Send this result back to the part of the code that asked for it.
             return f"same {axis} position"
 
-        # Explain X direction difference.
+
+        # Check this condition before choosing what happens next.
         if axis == "X":
 
-            # Positive X difference.
+
+            # Check this condition before choosing what happens next.
             if value_cm > 0:
+                # Send this result back to the part of the code that asked for it.
                 return f"CAD/STL is {abs(value_cm):.2f} cm more positive in X than PCD/scan"
 
-            # Negative X difference.
+
+            # Send this result back to the part of the code that asked for it.
             return f"CAD/STL is {abs(value_cm):.2f} cm more negative in X than PCD/scan"
 
-        # Explain Y direction difference.
+
+        # Check this condition before choosing what happens next.
         if axis == "Y":
 
-            # Positive Y difference.
+
+            # Check this condition before choosing what happens next.
             if value_cm > 0:
+                # Send this result back to the part of the code that asked for it.
                 return f"CAD/STL is {abs(value_cm):.2f} cm more positive in Y than PCD/scan"
 
-            # Negative Y difference.
+
+            # Send this result back to the part of the code that asked for it.
             return f"CAD/STL is {abs(value_cm):.2f} cm more negative in Y than PCD/scan"
 
-        # Explain Z direction difference.
+
+        # Check this condition before choosing what happens next.
         if axis == "Z":
 
-            # Positive Z means CAD is higher.
+
+            # Check this condition before choosing what happens next.
             if value_cm > 0:
+                # Send this result back to the part of the code that asked for it.
                 return f"CAD/STL is {abs(value_cm):.2f} cm higher than PCD/scan"
 
-            # Negative Z means CAD is lower.
+
+            # Send this result back to the part of the code that asked for it.
             return f"CAD/STL is {abs(value_cm):.2f} cm lower than PCD/scan"
 
-        # Fallback text if the axis is not X, Y, or Z.
+
+        # Send this result back to the part of the code that asked for it.
         return f"{axis} difference: {value_cm:.2f} cm"
 
+    # Create the calculate edge deviation report function.
     def calculate_edge_deviation_report(self, scan_pcd, cad_pcd):
-        """
-        This function calculates the full edge deviation report.
 
-        It does not print yet.
 
-        It only calculates and returns the values.
-
-        Main steps:
-
-        1. Find scan bounds.
-        2. Find CAD bounds.
-        3. Build scan corners.
-        4. Build CAD corners.
-        5. Build scan edges.
-        6. Build CAD edges.
-        7. Compare matching edges.
-        8. Calculate summary values.
-        """
-
-        # Find safe min and max bounds of the scan point cloud.
+        # Save several results into separate variable names.
         scan_min_bound, scan_max_bound = self.get_robust_bounds(scan_pcd)
 
-        # Find safe min and max bounds of the CAD point cloud.
+
+        # Save several results into separate variable names.
         cad_min_bound, cad_max_bound = self.get_robust_bounds(cad_pcd)
 
-        # Build 8 scan corners from scan bounds.
+
+        # Save a value in scan corners.
         scan_corners = self.build_corners(
+            # Add this value to the current group.
             scan_min_bound,
+            # Run this line as one small step in the program.
             scan_max_bound
         )
 
-        # Build 8 CAD corners from CAD bounds.
+
+        # Save a value in cad corners.
         cad_corners = self.build_corners(
+            # Add this value to the current group.
             cad_min_bound,
+            # Run this line as one small step in the program.
             cad_max_bound
         )
 
-        # Build 12 scan edges from scan corners.
+
+        # Save a value in scan edges.
         scan_edges = self.build_edges(scan_corners)
 
-        # Build 12 CAD edges from CAD corners.
+
+        # Save a value in cad edges.
         cad_edges = self.build_edges(cad_corners)
 
-        # Compare every scan edge with the matching CAD edge.
+
+        # Save a value in edge results.
         edge_results = self.calculate_edge_deviation(
+            # Add this value to the current group.
             scan_edges,
+            # Run this line as one small step in the program.
             cad_edges
         )
 
-        # Collect all midpoint distances into one NumPy array.
+
+        # Put these numbers into a NumPy array.
         midpoint_distances = np.array([
+            # Run this line as one small step in the program.
             result["midpoint_distance_m"]
+            # Repeat this code for every item in the group.
             for result in edge_results.values()
+        # Run this line as one small step in the program.
         ])
 
-        # Collect all start point distances into one NumPy array.
+
+        # Put these numbers into a NumPy array.
         start_distances = np.array([
+            # Run this line as one small step in the program.
             result["start_distance_m"]
+            # Repeat this code for every item in the group.
             for result in edge_results.values()
+        # Run this line as one small step in the program.
         ])
 
-        # Collect all end point distances into one NumPy array.
+
+        # Put these numbers into a NumPy array.
         end_distances = np.array([
+            # Run this line as one small step in the program.
             result["end_distance_m"]
+            # Repeat this code for every item in the group.
             for result in edge_results.values()
+        # Run this line as one small step in the program.
         ])
 
-        # Collect all absolute length differences into one NumPy array.
+
+        # Put these numbers into a NumPy array.
         length_differences = np.array([
+            # Run this line as one small step in the program.
             result["absolute_length_difference_m"]
+            # Repeat this code for every item in the group.
             for result in edge_results.values()
+        # Run this line as one small step in the program.
         ])
 
-        # Return the full report data.
+
+        # Send this result back to the part of the code that asked for it.
         return {
-            # Scan minimum bound.
+
+            # Store this named value inside a dictionary.
             "scan_min_bound": scan_min_bound,
 
-            # Scan maximum bound.
+
+            # Store this named value inside a dictionary.
             "scan_max_bound": scan_max_bound,
 
-            # CAD minimum bound.
+
+            # Store this named value inside a dictionary.
             "cad_min_bound": cad_min_bound,
 
-            # CAD maximum bound.
+
+            # Store this named value inside a dictionary.
             "cad_max_bound": cad_max_bound,
 
-            # Detailed result for each of the 12 edges.
+
+            # Store this named value inside a dictionary.
             "edge_results": edge_results,
 
-            # Average midpoint difference.
+
+            # Store this named value inside a dictionary.
             "midpoint_mean_m": float(np.mean(midpoint_distances)),
 
-            # Median midpoint difference.
+
+            # Store this named value inside a dictionary.
             "midpoint_median_m": float(np.median(midpoint_distances)),
 
-            # RMSE midpoint difference.
+
+            # Store this named value inside a dictionary.
             "midpoint_rmse_m": float(np.sqrt(np.mean(midpoint_distances ** 2))),
 
-            # Biggest midpoint difference.
+
+            # Store this named value inside a dictionary.
             "midpoint_max_m": float(np.max(midpoint_distances)),
 
-            # Average start point difference.
+
+            # Store this named value inside a dictionary.
             "start_mean_m": float(np.mean(start_distances)),
 
-            # Average end point difference.
+
+            # Store this named value inside a dictionary.
             "end_mean_m": float(np.mean(end_distances)),
 
-            # Average edge length difference.
+
+            # Store this named value inside a dictionary.
             "length_mean_m": float(np.mean(length_differences)),
 
-            # Median edge length difference.
+
+            # Store this named value inside a dictionary.
             "length_median_m": float(np.median(length_differences)),
 
-            # RMSE edge length difference.
+
+            # Store this named value inside a dictionary.
             "length_rmse_m": float(np.sqrt(np.mean(length_differences ** 2))),
 
-            # Biggest edge length difference.
+
+            # Store this named value inside a dictionary.
             "length_max_m": float(np.max(length_differences)),
         }
 
+    # Create the print edge deviation report function.
     def print_edge_deviation_report(self, scan_pcd, cad_pcd):
-        """
-        This function prints the 12-edge deviation report.
 
-        This answers the question:
 
-        "After alignment, how different are the CAD/STL edges
-        from the PCD/scan edges?"
-
-        This is useful because edges and corners show whether
-        the scan and CAD model are really aligned properly.
-        """
-
-        # Print an empty line.
+        # Show helpful information on the screen.
         print("")
 
-        # Tell the user what is being measured.
+
+        # Show helpful information on the screen.
         print("Measuring 12-edge deviation between scan and CAD...")
 
-        # Calculate the full edge report first.
+
+        # Save a value in result.
         result = self.calculate_edge_deviation_report(
+            # Add this value to the current group.
             scan_pcd,
+            # Run this line as one small step in the program.
             cad_pcd
         )
 
-        # Print the report header.
+
+        # Show helpful information on the screen.
         print("")
+        # Show helpful information on the screen.
         print("12-edge deviation report:")
+        # Show helpful information on the screen.
         print("Reference: STL/CAD model")
+        # Show helpful information on the screen.
         print("Measured : PCD scan")
+        # Show helpful information on the screen.
         print("Method   : robust bounding-box edge comparison")
+        # Show helpful information on the screen.
         print("Unit     : centimeters")
+        # Show helpful information on the screen.
         print("")
 
-        # Print the bounds used.
-        # These show the box size used for scan and CAD.
+
+        # Show helpful information on the screen.
         print("Bounds used")
+        # Round the numbers so they are easier to read.
         print(f"  Scan min bound: {np.round(result['scan_min_bound'], 4)}")
+        # Round the numbers so they are easier to read.
         print(f"  Scan max bound: {np.round(result['scan_max_bound'], 4)}")
+        # Round the numbers so they are easier to read.
         print(f"  CAD min bound : {np.round(result['cad_min_bound'], 4)}")
+        # Round the numbers so they are easier to read.
         print(f"  CAD max bound : {np.round(result['cad_max_bound'], 4)}")
+        # Show helpful information on the screen.
         print("")
 
-        # Print summary for edge midpoint differences.
+
+        # Show helpful information on the screen.
         print("Edge midpoint deviation summary")
+        # Show helpful information on the screen.
         print(f"  Mean midpoint difference   : {result['midpoint_mean_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print(f"  Median midpoint difference : {result['midpoint_median_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print(f"  RMSE midpoint difference   : {result['midpoint_rmse_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print(f"  Maximum midpoint difference: {result['midpoint_max_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print("")
 
-        # Print summary for endpoint differences.
+
+        # Show helpful information on the screen.
         print("Edge endpoint deviation summary")
+        # Show helpful information on the screen.
         print(f"  Mean start-point difference: {result['start_mean_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print(f"  Mean end-point difference  : {result['end_mean_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print("")
 
-        # Print summary for edge length differences.
+
+        # Show helpful information on the screen.
         print("Edge length deviation summary")
+        # Show helpful information on the screen.
         print(f"  Mean length difference     : {result['length_mean_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print(f"  Median length difference   : {result['length_median_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print(f"  RMSE length difference     : {result['length_rmse_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print(f"  Maximum length difference  : {result['length_max_m'] * 100:.2f} cm")
+        # Show helpful information on the screen.
         print("")
 
-        # Start printing every edge one by one.
+
+        # Show helpful information on the screen.
         print("Detailed 12-edge differences")
 
-        # Loop through all 12 edge results.
+
+        # Repeat this code for every item in the group.
         for label, edge_result in result["edge_results"].items():
 
-            # Print edge name.
+
+            # Show helpful information on the screen.
             print(label)
 
-            # Print CAD and scan start/end points.
+
+            # Round the numbers so they are easier to read.
             print(f"  CAD/STL start point      : {np.round(edge_result['cad_start'], 4)}")
+            # Round the numbers so they are easier to read.
             print(f"  PCD/scan start point     : {np.round(edge_result['scan_start'], 4)}")
+            # Round the numbers so they are easier to read.
             print(f"  CAD/STL end point        : {np.round(edge_result['cad_end'], 4)}")
+            # Round the numbers so they are easier to read.
             print(f"  PCD/scan end point       : {np.round(edge_result['scan_end'], 4)}")
 
-            # Print distance between start points.
+
+            # Show helpful information on the screen.
             print(f"  Start point difference   : {edge_result['start_distance_m'] * 100:.2f} cm")
 
-            # Print distance between end points.
+
+            # Show helpful information on the screen.
             print(f"  End point difference     : {edge_result['end_distance_m'] * 100:.2f} cm")
 
-            # Print distance between midpoints.
+
+            # Show helpful information on the screen.
             print(f"  Midpoint 3D difference   : {edge_result['midpoint_distance_m'] * 100:.2f} cm")
 
-            # Print X, Y, and Z midpoint differences.
+
+            # Show helpful information on the screen.
             print(f"  X midpoint difference    : {edge_result['absolute_x_m'] * 100:.2f} cm")
+            # Show helpful information on the screen.
             print(f"  Y midpoint difference    : {edge_result['absolute_y_m'] * 100:.2f} cm")
+            # Show helpful information on the screen.
             print(f"  Z midpoint difference    : {edge_result['absolute_z_m'] * 100:.2f} cm")
 
-            # Print readable X direction explanation.
+
+            # Show helpful information on the screen.
             print(f"  X direction              : {self.describe_signed_difference('X', edge_result['signed_x_m'])}")
 
-            # Print readable Y direction explanation.
+
+            # Show helpful information on the screen.
             print(f"  Y direction              : {self.describe_signed_difference('Y', edge_result['signed_y_m'])}")
 
-            # Print readable Z direction explanation.
+
+            # Show helpful information on the screen.
             print(f"  Z direction              : {self.describe_signed_difference('Z', edge_result['signed_z_m'])}")
 
-            # Print CAD edge length.
+
+            # Show helpful information on the screen.
             print(f"  CAD/STL edge length      : {edge_result['cad_length_m'] * 100:.2f} cm")
 
-            # Print scan edge length.
+
+            # Show helpful information on the screen.
             print(f"  PCD/scan edge length     : {edge_result['scan_length_m'] * 100:.2f} cm")
 
-            # If CAD edge is longer, print that.
+
+            # Check this condition before choosing what happens next.
             if edge_result["length_difference_m"] > 0:
+                # Show helpful information on the screen.
                 print(f"  Length direction         : CAD/STL edge is {edge_result['absolute_length_difference_m'] * 100:.2f} cm longer")
 
-            # If CAD edge is shorter, print that.
+
+            # Check another condition if the previous one was false.
             elif edge_result["length_difference_m"] < 0:
+                # Show helpful information on the screen.
                 print(f"  Length direction         : CAD/STL edge is {edge_result['absolute_length_difference_m'] * 100:.2f} cm shorter")
 
-            # If both edge lengths are the same, print that.
+
+            # Use this path when the earlier checks were false.
             else:
+                # Show helpful information on the screen.
                 print("  Length direction         : same length")
 
-            # Print an empty line after each edge.
+
+            # Show helpful information on the screen.
             print("")
 
+    # Create the print alignment deviation report function.
     def print_alignment_deviation_report(self, scan_pcd, cad_pcd):
-        """
-        This is a compatibility method.
 
-        It exists because the old main.py file may still call:
 
-        print_alignment_deviation_report()
-
-        Instead of breaking the code,
-        this function redirects the call to:
-
-        print_edge_deviation_report()
-
-        So the old name still works,
-        but it now prints the new 12-edge report.
-        """
-
-        # Redirect to the edge deviation report.
+        # Run this line as one small step in the program.
         self.print_edge_deviation_report(
+            # Add this value to the current group.
             scan_pcd,
+            # Run this line as one small step in the program.
             cad_pcd
         )
